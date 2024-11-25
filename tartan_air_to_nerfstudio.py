@@ -1,0 +1,218 @@
+import json
+import numpy as np
+import os
+import argparse
+import shutil
+from tqdm import tqdm
+
+camera_intrisincs = {
+    "camera_model": "OPENCV", # Camera model
+    "fl_x": 320.0, # focal length x
+    "fl_y": 320.0, # focal length y
+    "cx": 320.0, # principal point x
+    "cy": 240.0, # principal point y
+    "w": 640, # image width
+    "h": 480 # image height
+}
+
+def quaternion_to_transform(x: float,
+                            y: float,
+                            z: float,
+                            q0: float,
+                            q1: float,
+                            q2: float,
+                            q3: float
+                            ) -> np.ndarray:
+    """
+    Converts coordinates and quaternion into a 4x4 transformation matrix.
+
+    :param x: X coordinate (translation)
+    :param y: Y coordinate (translation)
+    :param z: Z coordinate (translation)
+    :param q0: Quaternion scalar (real part)
+    :param q1: Quaternion i
+    :param q2: Quaternion j
+    :param q3: Quaternion k
+    :return: 4x4 transformation matrix.
+    """
+
+    # Compute the rotation matrix from the quaternion
+    rotation_matrix = np.array([
+        [1 - 2 * (q2 ** 2 + q3 ** 2), 2 * (q1 * q2 - q0 * q3), 2 * (q1 * q3 + q0 * q2)],
+        [2 * (q1 * q2 + q0 * q3), 1 - 2 * (q1 ** 2 + q3 ** 2), 2 * (q2 * q3 - q0 * q1)],
+        [2 * (q1 * q3 - q0 * q2), 2 * (q2 * q3 + q0 * q1), 1 - 2 * (q1 ** 2 + q2 ** 2)]
+    ])
+
+    # Construct the 4x4 transformation matrix
+    transform_matrix = np.eye(4)
+    transform_matrix[:3, :3] = rotation_matrix  # Set the rotation matrix
+    transform_matrix[:3, 3] = [x, y, z]  # Set the translation
+
+    return transform_matrix
+
+class TartanAirToNerfstudio:
+    def __init__(self,
+                 pose_path: str = None,
+                 image_path: str = None,
+                 depth_path: str = None,
+                 output_path: str = None,
+                 ):
+        if pose_path is None:
+            raise ValueError("Please provide the path to the pose file.")
+
+        if image_path is None:
+            raise ValueError("Please provide the path to the image.")
+
+
+        self.has_depth = (depth_path is not None)
+        if self.has_depth:
+            self.depth_path = depth_path
+        else:
+            print("Warning: No depth path provided. Depth images will not be converted.")
+
+        if output_path is None:
+            output_path = os.path.join(os.getcwd(), "output")
+
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+
+        self.pose_path = pose_path
+        self.image_path = image_path
+        self.output_path = output_path
+
+    def run_conversion(self):
+        """
+        Run the conversion from TartanAir to NerfStudio.
+        :return: None
+        """
+        images = self.get_images()
+        poses = self.load_poses()
+
+        if self.has_depth:
+            depth_images = self.get_depth_images()
+        else:
+            depth_images = []
+
+        if len(poses) != len(images):
+            raise ValueError(f"The number of poses ({len(poses)}) does not match the number of images ({len(images)}).")
+
+        if self.has_depth and len(poses) != len(depth_images):
+            raise ValueError(f"The number of poses ({len(poses)}) does not match the number of depth images ({len(self.depth_path)}).")
+
+        nerfstudio_poses = self.convert_poses(poses)
+        # Copy the camera intrinsics as a new dictionary nerfstudio_transforms
+        nerfstudio_transforms = camera_intrisincs.copy()
+        nerfstudio_transforms["frames"] = []
+
+        # Sort images by their number content
+        images.sort(key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0]))))
+
+        if self.has_depth:
+            depth_images.sort(key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0]))))
+
+        for i, pose in enumerate(nerfstudio_poses):
+            frame = {
+                "file_path": f"images/{images[i]}",
+                "transform_matrix": pose.tolist()
+            }
+
+            if self.has_depth:
+                frame["depth_file_path"] = f"depth/{depth_images[i]}"
+
+            nerfstudio_transforms["frames"].append(frame)
+
+        self.save_nerfstudio_dataset(nerfstudio_transforms)
+
+    def save_nerfstudio_dataset(self, nerfstudio_transforms: dict):
+        """
+        Save the NerfStudio dataset.
+        :param nerfstudio_transforms: Dictionary containing the camera intrinsics and the list of frames.
+        :return: None
+        """
+        with open(os.path.join(self.output_path, "transforms.json"), "w") as transforms:
+            json.dump(nerfstudio_transforms, transforms, indent=4)
+
+        # Create images folder
+        images_folder = os.path.join(self.output_path, "images")
+
+        if not os.path.exists(images_folder):
+            os.makedirs(images_folder)
+        else:
+            shutil.rmtree(images_folder)
+            os.makedirs(images_folder)
+
+            # Copy images to the images folder
+            images = os.listdir(self.image_path)
+            for image in tqdm(images, desc="Copying images"):
+                if image.endswith(".png") or image.endswith(".jpg") or image.endswith(".jpeg"):
+                    shutil.copyfile(os.path.join(self.image_path, image), os.path.join(images_folder, image))
+
+        # Create depth folder
+        if self.has_depth:
+            depth_folder = os.path.join(self.output_path, "depth")
+            if not os.path.exists(depth_folder):
+                os.makedirs(depth_folder)
+            else:
+                shutil.rmtree(depth_folder)
+                os.makedirs(depth_folder)
+
+            # Copy depth images to the depth folder
+            depth_images = os.listdir(self.depth_path)
+            for depth_image in tqdm(depth_images, desc="Copying depth images"):
+                if depth_image.endswith(".npy") or depth_image.endswith(".png") or depth_image.endswith(".jpg") or depth_image.endswith(".jpeg"):
+                    shutil.copyfile(os.path.join(self.depth_path, depth_image), os.path.join(depth_folder, depth_image))
+
+        print(f"Dataset saved to {self.output_path}")
+
+    def get_images(self) -> list[str]:
+        """
+        Get the list of images in the image folder.
+        :return: List of images.
+        """
+        images = os.listdir(self.image_path)
+        return [i for i in images if i.endswith((".png", ".jpg", ".jpeg"))]
+
+    def get_depth_images(self) -> list[str]:
+        """
+        Get the list of depth images in the depth image folder.
+        :return:
+        """
+        depth_images = os.listdir(self.depth_path)
+        return [d for d in depth_images if d.endswith((".npy", ".png", ".jpg", ".jpeg"))]
+
+    def load_poses(self) -> list[list[float]]:
+        """
+        Load the poses from the pose file.
+        :return: List of poses. Each pose is a list of 7 values: x, y, z, q0, q1, q2, q3.
+        """
+        with open(self.pose_path) as f:
+            lines = f.readlines()
+            # Seperate the values and convert them to float
+            poses = [[float(x) for x in line.strip().split()] for line in lines]
+
+        return poses
+
+    def convert_poses(self, poses: list):
+        """
+        Converts the poses from TartanAir format to NerfStudio format.
+        :param poses: List of poses in TartanAir format. Each pose is a list of 7 values: x, y, z, q0, q1, q2, q3.
+        :return: List of poses in NerfStudio format. Each pose is a 4x4 transformation matrix.
+        """
+        nerf_studio_poses = []
+        for i, pose in enumerate(poses):
+            x, y, z, q0, q1, q2, q3 = pose
+            nerf_studio_poses.append(quaternion_to_transform(x, y, z, q0, q1, q2, q3))
+
+        return nerf_studio_poses
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Convert TartanAir dataset to NerfStudio dataset.")
+    parser.add_argument("-p", "--pose_path", type=str, help="Path to the pose file.")
+    parser.add_argument("-i", "--images", type=str, help="Path to the images.")
+    parser.add_argument("-d", "--depth_images", type=str, help="Path to the depth images.")
+    parser.add_argument("-o", "--output_path", type=str, help="Path to the output folder.", default=os.path.join(os.getcwd(), "output"))
+
+    args = parser.parse_args()
+
+    converter = TartanAirToNerfstudio(args.pose_path, args.images, args.depth_images, args.output_path)
+    converter.run_conversion()
