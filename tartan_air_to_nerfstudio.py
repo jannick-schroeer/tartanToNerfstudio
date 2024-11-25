@@ -1,9 +1,13 @@
-import json
-import numpy as np
-import os
 import argparse
+import json
+import os
 import shutil
+import warnings
+from typing import List, Dict, Any
+
+import numpy as np
 from tqdm import tqdm
+
 
 camera_intrisincs = {
     "camera_model": "OPENCV", # Camera model
@@ -15,40 +19,6 @@ camera_intrisincs = {
     "h": 480 # image height
 }
 
-def quaternion_to_transform(x: float,
-                            y: float,
-                            z: float,
-                            q0: float,
-                            q1: float,
-                            q2: float,
-                            q3: float
-                            ) -> np.ndarray:
-    """
-    Converts coordinates and quaternion into a 4x4 transformation matrix.
-
-    :param x: X coordinate (translation)
-    :param y: Y coordinate (translation)
-    :param z: Z coordinate (translation)
-    :param q0: Quaternion scalar (real part)
-    :param q1: Quaternion i
-    :param q2: Quaternion j
-    :param q3: Quaternion k
-    :return: 4x4 transformation matrix.
-    """
-
-    # Compute the rotation matrix from the quaternion
-    rotation_matrix = np.array([
-        [1 - 2 * (q2 ** 2 + q3 ** 2), 2 * (q1 * q2 - q0 * q3), 2 * (q1 * q3 + q0 * q2)],
-        [2 * (q1 * q2 + q0 * q3), 1 - 2 * (q1 ** 2 + q3 ** 2), 2 * (q2 * q3 - q0 * q1)],
-        [2 * (q1 * q3 - q0 * q2), 2 * (q2 * q3 + q0 * q1), 1 - 2 * (q1 ** 2 + q2 ** 2)]
-    ])
-
-    # Construct the 4x4 transformation matrix
-    transform_matrix = np.eye(4)
-    transform_matrix[:3, :3] = rotation_matrix  # Set the rotation matrix
-    transform_matrix[:3, 3] = [x, y, z]  # Set the translation
-
-    return transform_matrix
 
 class TartanAirToNerfstudio:
     def __init__(self,
@@ -57,6 +27,14 @@ class TartanAirToNerfstudio:
                  depth_path: str = None,
                  output_path: str = None,
                  ):
+        """
+        Create a new TartanAirToNerfstudio converter.
+
+        :param pose_path: Path to the pose file. The pose file with format: x y z q0 q1 q2 q3
+        :param image_path: Path to the image folder. The images should be in .png, .jpg or .jpeg format.
+        :param depth_path: Path to the depth image folder. The depth images should be in .npy, .png, .jpg or .jpeg format.
+        :param output_path: Path to the output folder. The output folder will contain the NerfStudio dataset.
+        """
         if pose_path is None:
             raise ValueError("Please provide the path to the pose file.")
 
@@ -68,7 +46,7 @@ class TartanAirToNerfstudio:
         if self.has_depth:
             self.depth_path = depth_path
         else:
-            print("Warning: No depth path provided. Depth images will not be converted.")
+            warnings.warn("Warning: No depth path provided. Depth images will not be converted.")
 
         if output_path is None:
             output_path = os.path.join(os.getcwd(), "output")
@@ -123,14 +101,14 @@ class TartanAirToNerfstudio:
 
         self.save_nerfstudio_dataset(nerfstudio_transforms)
 
-    def save_nerfstudio_dataset(self, nerfstudio_transforms: dict):
+    def save_nerfstudio_dataset(self, nerfstudio_transforms: Dict[str, Any]):
         """
         Save the NerfStudio dataset.
         :param nerfstudio_transforms: Dictionary containing the camera intrinsics and the list of frames.
         :return: None
         """
         with open(os.path.join(self.output_path, "transforms.json"), "w") as transforms:
-            json.dump(nerfstudio_transforms, transforms, indent=4)
+            json.dump(obj=nerfstudio_transforms, fp=transforms, indent=4)
 
         # Create images folder
         images_folder = os.path.join(self.output_path, "images")
@@ -164,7 +142,7 @@ class TartanAirToNerfstudio:
 
         print(f"Dataset saved to {self.output_path}")
 
-    def get_images(self) -> list[str]:
+    def get_images(self) -> List[str]:
         """
         Get the list of images in the image folder.
         :return: List of images.
@@ -172,7 +150,7 @@ class TartanAirToNerfstudio:
         images = os.listdir(self.image_path)
         return [i for i in images if i.endswith((".png", ".jpg", ".jpeg"))]
 
-    def get_depth_images(self) -> list[str]:
+    def get_depth_images(self) -> List[str]:
         """
         Get the list of depth images in the depth image folder.
         :return:
@@ -180,19 +158,19 @@ class TartanAirToNerfstudio:
         depth_images = os.listdir(self.depth_path)
         return [d for d in depth_images if d.endswith((".npy", ".png", ".jpg", ".jpeg"))]
 
-    def load_poses(self) -> list[list[float]]:
+    def load_poses(self) -> List[List[float]]:
         """
         Load the poses from the pose file.
         :return: List of poses. Each pose is a list of 7 values: x, y, z, q0, q1, q2, q3.
         """
         with open(self.pose_path) as f:
             lines = f.readlines()
-            # Seperate the values and convert them to float
+            # Separate the values and convert them to float
             poses = [[float(x) for x in line.strip().split()] for line in lines]
 
         return poses
 
-    def convert_poses(self, poses: list):
+    def convert_poses(self, poses: List[List[float]]) -> List[np.ndarray]:
         """
         Converts the poses from TartanAir format to NerfStudio format.
         :param poses: List of poses in TartanAir format. Each pose is a list of 7 values: x, y, z, q0, q1, q2, q3.
@@ -201,9 +179,46 @@ class TartanAirToNerfstudio:
         nerf_studio_poses = []
         for i, pose in enumerate(poses):
             x, y, z, q0, q1, q2, q3 = pose
-            nerf_studio_poses.append(quaternion_to_transform(x, y, z, q0, q1, q2, q3))
+            nerf_studio_poses.append(self.quaternion_to_transform(x, y, z, q0, q1, q2, q3))
 
         return nerf_studio_poses
+
+    @staticmethod
+    def quaternion_to_transform(x: float,
+                                y: float,
+                                z: float,
+                                q0: float,
+                                q1: float,
+                                q2: float,
+                                q3: float
+                                ) -> np.ndarray:
+        """
+        Converts coordinates and quaternion into a 4x4 transformation matrix.
+
+        :param x: X coordinate (translation)
+        :param y: Y coordinate (translation)
+        :param z: Z coordinate (translation)
+        :param q0: Quaternion scalar (real part)
+        :param q1: Quaternion i
+        :param q2: Quaternion j
+        :param q3: Quaternion k
+        :return: 4x4 transformation matrix.
+        """
+
+        # Compute the rotation matrix from the quaternion
+        rotation_matrix = np.array([
+            [1 - 2 * (q2 ** 2 + q3 ** 2), 2 * (q1 * q2 - q0 * q3), 2 * (q1 * q3 + q0 * q2)],
+            [2 * (q1 * q2 + q0 * q3), 1 - 2 * (q1 ** 2 + q3 ** 2), 2 * (q2 * q3 - q0 * q1)],
+            [2 * (q1 * q3 - q0 * q2), 2 * (q2 * q3 + q0 * q1), 1 - 2 * (q1 ** 2 + q2 ** 2)]
+        ])
+
+        # Construct the 4x4 transformation matrix
+        transform_matrix = np.eye(4)
+        transform_matrix[:3, :3] = rotation_matrix  # Set the rotation matrix
+        transform_matrix[:3, 3] = [x, y, z]  # Set the translation
+
+        return transform_matrix
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert TartanAir dataset to NerfStudio dataset.")
