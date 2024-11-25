@@ -119,11 +119,11 @@ class TartanAirToNerfstudio:
             shutil.rmtree(images_folder)
             os.makedirs(images_folder)
 
-            # Copy images to the images folder
-            images = os.listdir(self.image_path)
-            for image in tqdm(images, desc="Copying images"):
-                if image.endswith(".png") or image.endswith(".jpg") or image.endswith(".jpeg"):
-                    shutil.copyfile(os.path.join(self.image_path, image), os.path.join(images_folder, image))
+        # Copy images to the images folder
+        images = os.listdir(self.image_path)
+        for image in tqdm(images, desc="Copying images"):
+            if image.endswith(".png") or image.endswith(".jpg") or image.endswith(".jpeg"):
+                shutil.copyfile(os.path.join(self.image_path, image), os.path.join(images_folder, image))
 
         # Create depth folder
         if self.has_depth:
