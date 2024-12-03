@@ -19,6 +19,21 @@ camera_intrisincs = {
     "h": 480 # image height
 }
 
+def quaternion_multiply(q1, q2):
+    """
+    Multiplies two quaternions.
+
+    :param q1: First quaternion (qw, qx, qy, qz)
+    :param q2: Second quaternion (qw, qx, qy, qz)
+    :return: Resulting quaternion (qw, qx, qy, qz)
+    """
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+    y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+    z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+    return np.array([w, x, y, z])
 
 class TartanAirToNerfstudio:
     def __init__(self,
@@ -178,8 +193,10 @@ class TartanAirToNerfstudio:
         """
         nerf_studio_poses = []
         for i, pose in enumerate(poses):
-            x, y, z, q0, q1, q2, q3 = pose
-            nerf_studio_poses.append(self.quaternion_to_transform(x, y, z, q0, q1, q2, q3))
+            x_ned, y_ned, z_ned, q0_ned, q1_ned, q2_ned, q3_ned = pose
+            x_gl, y_gl, z_gl, q0_gl, q1_gl, q2_gl, q3_gl = self.ned_to_opengl_coordinates(x_ned, y_ned, z_ned, q0_ned, q1_ned, q2_ned, q3_ned)
+            transform_matrix = self.quaternion_to_transform(x_gl, y_gl, z_gl, q0_gl, q1_gl, q2_gl, q3_gl)
+            nerf_studio_poses.append(transform_matrix)
 
         return nerf_studio_poses
 
@@ -190,20 +207,22 @@ class TartanAirToNerfstudio:
                                 q0: float,
                                 q1: float,
                                 q2: float,
-                                q3: float
-                                ) -> np.ndarray:
+                                q3: float) -> np.ndarray:
         """
-        Converts coordinates and quaternion into a 4x4 transformation matrix.
+        Converts OpenGL-compatible coordinates and quaternion into a 4x4 transformation matrix.
 
-        :param x: X coordinate (translation)
-        :param y: Y coordinate (translation)
-        :param z: Z coordinate (translation)
-        :param q0: Quaternion scalar (real part)
-        :param q1: Quaternion i
-        :param q2: Quaternion j
-        :param q3: Quaternion k
-        :return: 4x4 transformation matrix.
+        :param x: OpenGL X coordinate (translation)
+        :param y: OpenGL Y coordinate (translation)
+        :param z: OpenGL Z coordinate (translation)
+        :param q0: Quaternion scalar (real part, OpenGL)
+        :param q1: Quaternion i (OpenGL)
+        :param q2: Quaternion j (OpenGL)
+        :param q3: Quaternion k (OpenGL)
+        :return: 4x4 transformation matrix in OpenGL coordinates.
         """
+        # Normalize the quaternion to ensure it's valid
+        norm = np.sqrt(q0 ** 2 + q1 ** 2 + q2 ** 2 + q3 ** 2)
+        q0, q1, q2, q3 = q0 / norm, q1 / norm, q2 / norm, q3 / norm
 
         # Compute the rotation matrix from the quaternion
         rotation_matrix = np.array([
@@ -218,6 +237,33 @@ class TartanAirToNerfstudio:
         transform_matrix[:3, 3] = [x, y, z]  # Set the translation
 
         return transform_matrix
+
+    @staticmethod
+    def ned_to_opengl_coordinates(x: float, y: float, z: float,
+                                  q0: float, q1: float, q2: float, q3: float):
+        """
+        Converts NED translation and quaternion to OpenGL-compatible translation and quaternion.
+
+        :param x: NED X coordinate (translation)
+        :param y: NED Y coordinate (translation)
+        :param z: NED Z coordinate (translation)
+        :param q0: Quaternion scalar (real part, NED)
+        :param q1: Quaternion i (NED)
+        :param q2: Quaternion j (NED)
+        :param q3: Quaternion k (NED)
+        :return: Tuple of OpenGL-compatible (x, y, z, q0, q1, q2, q3)
+        """
+
+        x_gl = y
+        y_gl = -z
+        z_gl = -x
+
+        q0_gl = -q0
+        q1_gl = q1
+        q2_gl = -q2
+        q3_gl = -q3
+
+        return x_gl, y_gl, z_gl, q0_gl, q1_gl, q2_gl, q3_gl
 
 
 if __name__ == "__main__":
