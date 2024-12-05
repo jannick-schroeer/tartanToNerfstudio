@@ -247,8 +247,8 @@ class TartanAirToNerfstudio:
         :return: 4x4 transformation matrix in OpenGL
         """
         translation = np.array([
+            [0, 1, 0, 0],
             [0, 0, -1, 0],
-            [0, -1, 0, 0],
             [-1, 0, 0, 0],
             [0, 0, 0, 1]
         ])
