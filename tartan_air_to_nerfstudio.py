@@ -19,22 +19,6 @@ camera_intrisincs = {
     "h": 480 # image height
 }
 
-def quaternion_multiply(q1, q2):
-    """
-    Multiplies two quaternions.
-
-    :param q1: First quaternion (qw, qx, qy, qz)
-    :param q2: Second quaternion (qw, qx, qy, qz)
-    :return: Resulting quaternion (qw, qx, qy, qz)
-    """
-    w1, x1, y1, z1 = q1
-    w2, x2, y2, z2 = q2
-    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
-    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
-    y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
-    z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
-    return np.array([w, x, y, z])
-
 class TartanAirToNerfstudio:
     def __init__(self,
                  pose_path: str = None,
@@ -45,7 +29,7 @@ class TartanAirToNerfstudio:
         """
         Create a new TartanAirToNerfstudio converter.
 
-        :param pose_path: Path to the pose file. The pose file with format: x y z q0 q1 q2 q3
+        :param pose_path: Path to the pose file. The pose file with format: x y z qx qy qz qw
         :param image_path: Path to the image folder. The images should be in .png, .jpg or .jpeg format.
         :param depth_path: Path to the depth image folder. The depth images should be in .npy, .png, .jpg or .jpeg format.
         :param output_path: Path to the output folder. The output folder will contain the NerfStudio dataset.
@@ -176,7 +160,7 @@ class TartanAirToNerfstudio:
     def load_poses(self) -> List[List[float]]:
         """
         Load the poses from the pose file.
-        :return: List of poses. Each pose is a list of 7 values: x, y, z, q0, q1, q2, q3.
+        :return: List of poses. Each pose is a list of 7 values: x, y, z, qx, qy, qz, qw
         """
         with open(self.pose_path) as f:
             lines = f.readlines()
@@ -188,13 +172,13 @@ class TartanAirToNerfstudio:
     def convert_poses(self, poses: List[List[float]]) -> List[np.ndarray]:
         """
         Converts the poses from TartanAir format to NerfStudio format.
-        :param poses: List of poses in TartanAir format. Each pose is a list of 7 values: x, y, z, q0, q1, q2, q3.
+        :param poses: List of poses in TartanAir format. Each pose is a list of 7 values: x, y, z, qx, qy, qz, qw.
         :return: List of poses in NerfStudio format. Each pose is a 4x4 transformation matrix.
         """
         nerf_studio_poses = []
         for i, pose in enumerate(poses):
-            x_ned, y_ned, z_ned, q0_ned, q1_ned, q2_ned, q3_ned = pose
-            transform_ned = self.quaternion_to_transform(x_ned, y_ned, z_ned, q0_ned, q1_ned, q2_ned, q3_ned)
+            x_ned, y_ned, z_ned, qx_ned, qy_ned, qz_ned, qw_ned = pose
+            transform_ned = self.quaternion_to_transform(x_ned, y_ned, z_ned, qw_ned, qx_ned, qy_ned, qz_ned)
             transform_opengl = self.ned_to_opengl(transform_ned)
             nerf_studio_poses.append(transform_opengl)
 
@@ -204,31 +188,31 @@ class TartanAirToNerfstudio:
     def quaternion_to_transform(x: float,
                                 y: float,
                                 z: float,
-                                q0: float,
-                                q1: float,
-                                q2: float,
-                                q3: float) -> np.ndarray:
+                                qw: float,
+                                qx: float,
+                                qy: float,
+                                qz: float) -> np.ndarray:
         """
         Converts OpenGL-compatible coordinates and quaternion into a 4x4 transformation matrix.
 
         :param x: OpenGL X coordinate (translation)
         :param y: OpenGL Y coordinate (translation)
         :param z: OpenGL Z coordinate (translation)
-        :param q0: Quaternion scalar (real part)
-        :param q1: Quaternion i
-        :param q2: Quaternion j
-        :param q3: Quaternion k
+        :param qw: Quaternion scalar (real part)
+        :param qx: Quaternion i
+        :param qy: Quaternion j
+        :param qz: Quaternion k
         :return: 4x4 transformation matrix in OpenGL coordinates.
         """
         # Normalize the quaternion to ensure it's valid
-        norm = np.sqrt(q0 ** 2 + q1 ** 2 + q2 ** 2 + q3 ** 2)
-        q0, q1, q2, q3 = q0 / norm, q1 / norm, q2 / norm, q3 / norm
+        norm = np.sqrt(qw ** 2 + qx ** 2 + qy ** 2 + qz ** 2)
+        qw, qx, qy, qz = qw / norm, qx / norm, qy / norm, qz / norm
 
         # Compute the rotation matrix from the quaternion
         rotation_matrix = np.array([
-            [q0 ** 2 + q1 ** 2 - q2 ** 2 - q3 ** 2, 2 * (q1 * q2 - q0 * q3), 2 * (q0 * q2 + q1 * q3)],
-            [2 * (q1 * q2 + q0 * q3), q0 ** 2 - q1 ** 2 + q2 ** 2 - q3 ** 2, 2 * (q2 * q3 - q0 * q1)],
-            [2 * (q1 * q3 - q0 * q2), 2 * (q0 * q1 + q2 * q3), q0 ** 2 - q1 ** 2 - q2 ** 2 + q3 ** 2]
+            [qw ** 2 + qx ** 2 - qy ** 2 - qz ** 2, 2 * (qx * qy - qw * qz), 2 * (qw * qy + qx * qz)],
+            [2 * (qx * qy + qw * qz), qw ** 2 - qx ** 2 + qy ** 2 - qz ** 2, 2 * (qy * qz - qw * qx)],
+            [2 * (qx * qz - qw * qy), 2 * (qw * qx + qy * qz), qw ** 2 - qx ** 2 - qy ** 2 + qz ** 2]
         ])
 
         # Construct the 4x4 transformation matrix
@@ -246,14 +230,19 @@ class TartanAirToNerfstudio:
         :param transform: 4x4 transformation matrix in NED coordinates.
         :return: 4x4 transformation matrix in OpenGL
         """
+        # NED to OpenGL transformation matrix
         translation = np.array([
             [0, 1, 0, 0],
             [0, 0, -1, 0],
             [-1, 0, 0, 0],
             [0, 0, 0, 1]
-        ])
+        ], dtype=np.float32)
 
-        return np.dot(translation, transform_ned)
+        ned_to_opengl_inv = np.linalg.inv(translation)
+
+        transform_opengl = translation @ transform_ned @ ned_to_opengl_inv
+
+        return transform_opengl
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert TartanAir dataset to NerfStudio dataset.")
