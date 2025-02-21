@@ -49,6 +49,10 @@ class TartanToNerfStudio:
         """
         Create a new TartanToNerfStudio converter.
         :param base_path: Path to the base folder of the TartanAir/Ground dataset.
+        :param camera_intrinsics: Camera intrinsics to use. (Air, Ground, Custom)
+        :param pose_limit: Limit the number of poses to convert.
+        :param distribute_uniformly: If True, distribute the poses uniformly.
+        :param depth_conversion: Convert depth images to npy files.
         """
         if base_path is None:
             raise ValueError("Please provide the path to the base folder of the TartanAir/Ground dataset.")
@@ -103,6 +107,11 @@ class TartanToNerfStudio:
         self.write_transforms(converted_poses)
 
     def load_poses(self, poses: List[str]):
+        """
+        Load the poses from the dataset.
+        :param poses: List of poses to load.
+        :return: List of loaded poses.
+        """
         loaded_poses = []
 
         for name in poses:
@@ -128,6 +137,11 @@ class TartanToNerfStudio:
         return loaded_poses
 
     def convert_poses(self, poses: List[Dict]):
+        """
+        Convert the poses to NerfStudio format.
+        :param poses: List of poses to convert.
+        :return: List of converted poses.
+        """
         for pose in poses:
             pose['nerfstudio_poses'] = self.convert_pose(pose)
 
@@ -203,8 +217,12 @@ class TartanToNerfStudio:
         return transform_opengl
 
     def convert_depth_image(self, depth_path):
+        """
+        For TartanGround 32bit depth images are saved as PNG files. This function converts them to npy files.
+        :param depth_path:
+        :return:
+        """
         depth_rgba = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
-        depth_float = depth_rgba.view("<f4").squeeze()
 
         # Convert depth image to float32 format
         depth_values = depth_rgba.view("<f4").squeeze()
@@ -216,6 +234,11 @@ class TartanToNerfStudio:
         return os.path.basename(converted_path)
 
     def write_transforms(self, poses):
+        """
+        Write the transforms.json file.
+        :param poses: List of poses to write.
+        :return:
+        """
         global camera_intrinsics
         transforms = camera_intrinsics[self.camera_intrinsics].copy()
         transforms["frames"] = []
