@@ -123,8 +123,11 @@ class TartanToNerfStudio:
 
                 if self.pose_limit is not None:
                     single_limit = self.pose_limit // len(poses)
+                    print(f"Limiting poses to {single_limit} per pose file (total: {len(camera_poses)})")
                     if self.distribute_uniformly:
-                        camera_poses = camera_poses[::len(camera_poses) // single_limit]
+                        distribution = len(camera_poses) // single_limit
+                        print(f"Distributing poses uniformly with a step of {distribution} (total: {len(camera_poses)})")
+                        camera_poses = camera_poses[::distribution]
                     else:
                         camera_poses = camera_poses[:single_limit]
 
@@ -251,10 +254,32 @@ class TartanToNerfStudio:
             images = [i for i in os.listdir(images_folder) if i.endswith((".png", ".jpg", ".jpeg"))]
             images = sorted(images, key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0]))))
 
+            if self.pose_limit is not None:
+                single_limit = self.pose_limit // len(poses)
+                if self.distribute_uniformly:
+                    distribution = len(images) // single_limit
+                    images = images[::distribution]
+                else:
+                    images = images[:single_limit]
+
+            if len(images) != len(pose['nerfstudio_poses']):
+                raise ValueError(f"Number of images ({len(images)}) does not match the number of poses ({len(pose['nerfstudio_poses'])})")
+
             if pose['has_depth']:
                 depth_folder = os.path.join(self.base_path, depth_folder_name)
-                depth_images = [i for i in os.listdir(depth_folder) if i.endswith((".npy", ".png", ".jpg", ".jpeg"))]
+                depth_images = [i for i in os.listdir(depth_folder) if (i.endswith((".npy", ".png", ".jpg", ".jpeg")) and not i.endswith("_converted.npy"))]
                 depth_images = sorted(depth_images, key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0]))))
+
+                if self.pose_limit is not None:
+                    single_limit = self.pose_limit // len(poses)
+                    if self.distribute_uniformly:
+                        distribution = len(depth_images) // single_limit
+                        depth_images = depth_images[::distribution]
+                    else:
+                        depth_images = depth_images[:single_limit]
+
+                if len(depth_images) != len(pose['nerfstudio_poses']):
+                    raise ValueError(f"Number of depth images ({len(depth_images)}) does not match the number of poses ({len(pose['nerfstudio_poses'])})")
 
             for i, nerf_pose in enumerate(pose['nerfstudio_poses']):
                 frame = {
