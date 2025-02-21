@@ -1,12 +1,10 @@
 import argparse
 import json
 import os
-import shutil
-import warnings
-from typing import List, Dict, Any
+from typing import List, Dict
+import cv2
 import inquirer
 import numpy as np
-from tqdm import tqdm
 
 
 camera_intrisincs = {
@@ -14,14 +12,16 @@ camera_intrisincs = {
     "fl_x": 320.0, # focal length x
     "fl_y": 320.0, # focal length y
     "cx": 320.0, # principal point x
-    "cy": 240.0, # principal point y
+    "cy": 320.0, # principal point y
     "w": 640, # image width
-    "h": 480 # image height
+    "h": 640 # image height
 }
 
 class TartanToNerfStudio:
     def __init__(self,
-                 base_path: str=None
+                 base_path: str=None,
+                 pose_limit: int=None,
+                 depth_conversion: bool=False
                  ):
         """
         Create a new TartanToNerfStudio converter.
@@ -31,6 +31,8 @@ class TartanToNerfStudio:
             raise ValueError("Please provide the path to the base folder of the TartanAir/Ground dataset.")
 
         self.base_path = base_path
+        self.pose_limit = pose_limit
+        self.depth_conversion = depth_conversion
 
     def check_poses(self):
         """
@@ -70,8 +72,7 @@ class TartanToNerfStudio:
 
         loaded_poses = self.load_poses(poses)
         converted_poses = self.convert_poses(loaded_poses)
-
-
+        self.write_transforms(converted_poses)
 
     def load_poses(self, poses: List[str]):
         loaded_poses = []
@@ -82,6 +83,10 @@ class TartanToNerfStudio:
                 # Separate the values and convert them to float
                 camera_poses = [[float(x) for x in line.strip().split()] for line in lines]
                 has_depth = os.path.exists(os.path.join(self.base_path, f"depth{name}"))
+
+                if self.pose_limit is not None:
+                    single_limit = self.pose_limit // len(poses)
+                    camera_poses = camera_poses[:single_limit]
 
                 loaded_poses.append({
                     'name': name,
@@ -166,31 +171,49 @@ class TartanToNerfStudio:
 
         return transform_opengl
 
-    def write_transforms(self, poses: List[Dict]):
-        transforms = camera_intrisincs.copy()
+    def convert_depth_image(self, depth_path):
+        depth_rgba = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
+        depth_float = depth_rgba.view("<f4").squeeze()
+
+        # Normalize and convert to 8-bit
+        depth_8bit = cv2.normalize(depth_float, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+        # Save the converted depth image
+        converted_path = depth_path.replace(".png", "_converted.png")
+        cv2.imwrite(converted_path, depth_8bit)
+
+        return os.path.basename(converted_path)
+
+    def write_transforms(self, poses, camera_intrinsics):
+        transforms = camera_intrinsics.copy()
         transforms["frames"] = []
 
         for pose in poses:
-            image_folder_name = f"image_{pose['name']}"
-            depth_folder_name = f"depth_{pose['name']}"
+            image_folder_name = f"image{pose['name']}"
+            depth_folder_name = f"depth{pose['name']}"
 
             images_folder = os.path.join(self.base_path, image_folder_name)
-            images = os.listdir(images_folder)
-            images.sort(key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0]))))
+            images = [i for i in os.listdir(images_folder) if i.endswith((".png", ".jpg", ".jpeg"))]
+            images = sorted(images, key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0]))))
 
             if pose['has_depth']:
                 depth_folder = os.path.join(self.base_path, depth_folder_name)
-                depth_images = os.listdir(depth_folder)
-                depth_images.sort(key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0]))))
+                depth_images = [i for i in os.listdir(depth_folder) if i.endswith((".npy", ".png", ".jpg", ".jpeg"))]
+                depth_images = sorted(depth_images, key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0]))))
 
             for i, nerf_pose in enumerate(pose['nerfstudio_poses']):
                 frame = {
                     "file_path": f"{image_folder_name}/{images[i]}",
-                    "transform_matrix": pose.tolist()
+                    "transform_matrix": nerf_pose.tolist()
                 }
 
                 if pose['has_depth']:
-                    frame["depth_file_path"] = f"{depth_folder_name}/{depth_images[i]}"
+                    depth_file = f"{depth_folder_name}/{depth_images[i]}"
+                    if self.depth_conversion:
+                        converted_file = self.convert_depth_image(os.path.join(self.base_path, depth_file))
+                        frame["depth_file_path"] = f"{depth_folder_name}/{converted_file}"
+                    else:
+                        frame["depth_file_path"] = depth_file
 
                 transforms["frames"].append(frame)
 
@@ -201,6 +224,8 @@ class TartanToNerfStudio:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert TartanAir dataset to NerfStudio dataset.")
     parser.add_argument("-b", "--base_path", type=str, help="Path to the base folder.")
+    parser.add_argument("-p", "--pose-limit", type=int, help="Limit the number of poses to convert.")
+    parser.add_argument("-d", "--depth-conversion", type=bool, help="Convert depth images to nerfstudio format.")
     args = parser.parse_args()
 
     converter = TartanToNerfStudio(args.base_path)
