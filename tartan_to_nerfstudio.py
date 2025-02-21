@@ -8,18 +8,40 @@ import numpy as np
 
 
 camera_intrinsics = {
-    "camera_model": "OPENCV", # Camera model
-    "fl_x": 320.0, # focal length x
-    "fl_y": 320.0, # focal length y
-    "cx": 320.0, # principal point x
-    "cy": 320.0, # principal point y
-    "w": 640, # image width
-    "h": 640 # image height
+    'Custom': {
+        "camera_model": "OPENCV",  # Camera model
+        "fl_x": 320.0,  # focal length x
+        "fl_y": 320.0,  # focal length y
+        "cx": 320.0,  # principal point x
+        "cy": 240.0,  # principal point y
+        "w": 640,  # image width
+        "h": 480  # image height
+    },
+
+    'Air': {
+        "camera_model": "OPENCV", # Camera model
+        "fl_x": 320.0, # focal length x
+        "fl_y": 320.0, # focal length y
+        "cx": 320.0, # principal point x
+        "cy": 240.0, # principal point y
+        "w": 640, # image width
+        "h": 480 # image height
+    },
+    'Ground': {
+        "camera_model": "OPENCV", # Camera model
+        "fl_x": 320.0, # focal length x
+        "fl_y": 320.0, # focal length y
+        "cx": 320.0, # principal point x
+        "cy": 320.0, # principal point y
+        "w": 640, # image width
+        "h": 640 # image height
+    }
 }
 
 class TartanToNerfStudio:
     def __init__(self,
                  base_path: str=None,
+                 camera_intrinsics: str="Air",
                  pose_limit: int=None,
                  distribute_uniformly: bool=False,
                  depth_conversion: bool=False
@@ -31,7 +53,11 @@ class TartanToNerfStudio:
         if base_path is None:
             raise ValueError("Please provide the path to the base folder of the TartanAir/Ground dataset.")
 
+        if camera_intrinsics not in ["Air", "Ground", "Custom"]:
+            raise ValueError("Camera intrinsics must be either 'Air', 'Ground' or 'Custom'.")
+
         self.base_path = base_path
+        self.camera_intrinsics = camera_intrinsics
         self.pose_limit = pose_limit
         self.distribute_uniformly = distribute_uniformly
         self.depth_conversion = depth_conversion
@@ -191,7 +217,7 @@ class TartanToNerfStudio:
 
     def write_transforms(self, poses):
         global camera_intrinsics
-        transforms = camera_intrinsics.copy()
+        transforms = camera_intrinsics[self.camera_intrinsics].copy()
         transforms["frames"] = []
 
         for pose in poses:
@@ -229,14 +255,16 @@ class TartanToNerfStudio:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert TartanAir dataset to NerfStudio dataset.")
-    parser.add_argument("-b", "--base-path", type=str, help="Path to the base folder.")
-    parser.add_argument("-p", "--pose-limit", type=int, help="Limit the number of poses to convert.")
-    parser.add_argument("-u", "--uniform", type=bool, help="When limiting poses, instead of taking the first n poses, take them uniformly.")
-    parser.add_argument("-d", "--depth-conversion", type=bool, help="Convert depth images to npy files. (Needed for 32bit depth images)")
+    parser.add_argument("-b", "--base-path", type=str, help="Path to the base folder.", required=True)
+    parser.add_argument("-p", "--pose-limit", type=int, help="Limit the number of poses to convert.", default=None)
+    parser.add_argument("-u", "--uniform", type=bool, help="When limiting poses, instead of taking the first n poses, take them uniformly.", default=False)
+    parser.add_argument("-d", "--depth-conversion", type=bool, help="Convert depth images to npy files. (Needed for 32bit depth images)", default=False)
+    parser.add_argument("-c", "--camera-intrinsics", type=str, help="Use TartanAir, TartanGround or Custom intrinsics. [Air, Ground, Custom]", default="Ground")
     args = parser.parse_args()
 
     converter = TartanToNerfStudio(
         args.base_path,
+        args.camera_intrinsics,
         int(args.pose_limit) if args.pose_limit is not None else None,
         args.uniform,
         args.depth_conversion
