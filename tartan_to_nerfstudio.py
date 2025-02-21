@@ -303,10 +303,10 @@ class TartanToNerfStudio:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert TartanAir dataset to NerfStudio dataset.")
-    parser.add_argument("-b", "--base-path", type=str, help="Path to the base folder.", required=True)
+    parser.add_argument('base_path', type=str, help="Path to the base folder.")
     parser.add_argument("-p", "--pose-limit", type=int, help="Limit the number of poses to convert.", default=None)
-    parser.add_argument("-u", "--uniform", type=bool, help="When limiting poses, instead of taking the first n poses, take them uniformly.", default=False)
-    parser.add_argument("-d", "--depth-conversion", type=bool, help="Convert depth images to npy files. (Needed for 32bit depth images)", default=False)
+    parser.add_argument("-u", "--uniform", help="When limiting poses, instead of taking the first n poses, take them uniformly.", default=False, action="store_true")
+    parser.add_argument("-d", "--depth-conversion", help="Convert depth images to npy files. (Needed for 32bit depth images)", default=False, action="store_true")
     parser.add_argument("-c", "--camera-intrinsics", type=str, help="Use TartanAir, TartanGround or Custom intrinsics. [Air, Ground, Custom]", default="Ground")
     args = parser.parse_args()
 
