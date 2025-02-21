@@ -21,6 +21,7 @@ class TartanToNerfStudio:
     def __init__(self,
                  base_path: str=None,
                  pose_limit: int=None,
+                 distribute_uniformly: bool=False,
                  depth_conversion: bool=False
                  ):
         """
@@ -32,6 +33,7 @@ class TartanToNerfStudio:
 
         self.base_path = base_path
         self.pose_limit = pose_limit
+        self.distribute_uniformly = distribute_uniformly
         self.depth_conversion = depth_conversion
 
     def check_poses(self):
@@ -86,7 +88,10 @@ class TartanToNerfStudio:
 
                 if self.pose_limit is not None:
                     single_limit = self.pose_limit // len(poses)
-                    camera_poses = camera_poses[:single_limit]
+                    if self.distribute_uniformly:
+                        camera_poses = camera_poses[::len(camera_poses) // single_limit]
+                    else:
+                        camera_poses = camera_poses[:single_limit]
 
                 loaded_poses.append({
                     'name': name,
@@ -224,12 +229,18 @@ class TartanToNerfStudio:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert TartanAir dataset to NerfStudio dataset.")
-    parser.add_argument("-b", "--base_path", type=str, help="Path to the base folder.")
+    parser.add_argument("-b", "--base-path", type=str, help="Path to the base folder.")
     parser.add_argument("-p", "--pose-limit", type=int, help="Limit the number of poses to convert.")
+    parser.add_argument("-u", "--uniform", type=bool, help="When limiting poses, instead of taking the first n poses, take them uniformly.")
     parser.add_argument("-d", "--depth-conversion", type=bool, help="Convert depth images to npy files. (Needed for 32bit depth images)")
     args = parser.parse_args()
 
-    converter = TartanToNerfStudio(args.base_path, int(args.pose_limit) if args.pose_limit is not None else None, args.depth_conversion)
+    converter = TartanToNerfStudio(
+        args.base_path,
+        int(args.pose_limit) if args.pose_limit is not None else None,
+        args.uniform,
+        args.depth_conversion
+    )
     poses = converter.check_poses()
 
     questions = [
