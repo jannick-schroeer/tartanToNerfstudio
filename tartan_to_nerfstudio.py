@@ -7,7 +7,7 @@ import inquirer
 import numpy as np
 
 
-camera_intrisincs = {
+camera_intrinsics = {
     "camera_model": "OPENCV", # Camera model
     "fl_x": 320.0, # focal length x
     "fl_y": 320.0, # focal length y
@@ -184,7 +184,8 @@ class TartanToNerfStudio:
 
         return os.path.basename(converted_path)
 
-    def write_transforms(self, poses, camera_intrinsics):
+    def write_transforms(self, poses):
+        global camera_intrinsics
         transforms = camera_intrinsics.copy()
         transforms["frames"] = []
 
@@ -225,10 +226,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert TartanAir dataset to NerfStudio dataset.")
     parser.add_argument("-b", "--base_path", type=str, help="Path to the base folder.")
     parser.add_argument("-p", "--pose-limit", type=int, help="Limit the number of poses to convert.")
-    parser.add_argument("-d", "--depth-conversion", type=bool, help="Convert depth images to nerfstudio format.")
+    parser.add_argument("-d", "--depth-conversion", type=bool, help="Convert depth images to 8bit depth images.")
     args = parser.parse_args()
 
-    converter = TartanToNerfStudio(args.base_path)
+    converter = TartanToNerfStudio(args.base_path, int(args.pose_limit) if args.pose_limit is not None else None, args.depth_conversion)
     poses = converter.check_poses()
 
     questions = [
