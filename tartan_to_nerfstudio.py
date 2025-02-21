@@ -175,12 +175,12 @@ class TartanToNerfStudio:
         depth_rgba = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
         depth_float = depth_rgba.view("<f4").squeeze()
 
-        # Normalize and convert to 8-bit
-        depth_8bit = cv2.normalize(depth_float, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        # Convert depth image to float32 format
+        depth_values = depth_rgba.view("<f4").squeeze()
 
-        # Save the converted depth image
-        converted_path = depth_path.replace(".png", "_converted.png")
-        cv2.imwrite(converted_path, depth_8bit)
+        # Save to npy file
+        converted_path = depth_path.replace(".png", "_converted.npy")
+        np.save(converted_path, depth_values)
 
         return os.path.basename(converted_path)
 
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert TartanAir dataset to NerfStudio dataset.")
     parser.add_argument("-b", "--base_path", type=str, help="Path to the base folder.")
     parser.add_argument("-p", "--pose-limit", type=int, help="Limit the number of poses to convert.")
-    parser.add_argument("-d", "--depth-conversion", type=bool, help="Convert depth images to 8bit depth images.")
+    parser.add_argument("-d", "--depth-conversion", type=bool, help="Convert depth images to npy files. (Needed for 32bit depth images)")
     args = parser.parse_args()
 
     converter = TartanToNerfStudio(args.base_path, int(args.pose_limit) if args.pose_limit is not None else None, args.depth_conversion)
