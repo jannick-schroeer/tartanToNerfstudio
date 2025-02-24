@@ -36,20 +36,16 @@ python tartanair_to_nerfstudio.py -p <pose_file_path> -i <image_folder_path> [-d
 #### Arguments:
 | Argument | Description |
 |----------|-------------|
-| `-b`, `--base-path` | Path to the base folder of the TartanAir dataset (Required). |
+| `base_path` | Path to the base folder of the TartanAir dataset (Required). |
 | `-c`, `--camera-intrinsics` | Camera intrinsics to use: `Air`, `Ground`, or `Custom` (Default: `Ground`). |
 | `-p`, `--pose-limit` | Limit the number of poses to convert (Optional). |
 | `-u`, `--uniform` | Distribute selected poses uniformly instead of taking the first `n` poses (Default: `False`). |
 | `-d`, `--depth-conversion` | Convert depth images to `.npy` format (Default: `False`). |
 
 ### Example
-
-Convert a TartanAir dataset with images and depth maps:
-
-## Example
-To convert a dataset with a pose limit of the first 300 images, using `Ground` camera intrinsics and enabling depth conversion:
+To convert a dataset with a pose limit of 300 images, which are uniformly selected, using `Ground` camera intrinsics and enabling depth conversion:
 ```sh
-python tartan_to_nerfstudio.py -b ./dataset -c Air -p 300 -d True
+python tartan_to_nerfstudio.py ./dataset -c Ground -du -p 300
 ```
 
 ### Note
@@ -75,12 +71,3 @@ The script will generate a `transforms.json` file in the base folder with the fo
     ]
 }
 ```
-
-## License
-This project is licensed under the MIT License. See `LICENSE` for details.
-
-## Contributing
-
-Feel free to open issues or submit pull requests to improve this project. Contributions are welcome!
-
-
