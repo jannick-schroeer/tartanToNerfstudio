@@ -30,7 +30,7 @@ It processes pose files, converts depth images (if needed), and generates a tran
 Run the script with the following arguments:
 
 ```bash
-python tartanair_to_nerfstudio.py -p <pose_file_path> -i <image_folder_path> [-d <depth_folder_path>] [-o <output_folder_path>]
+python tartan_to_nerfstudio.py <base_path> -c <camera-intrintisics -p <pose-limit>
 ```
 
 #### Arguments:
@@ -40,7 +40,7 @@ python tartanair_to_nerfstudio.py -p <pose_file_path> -i <image_folder_path> [-d
 | `-c`, `--camera-intrinsics` | Camera intrinsics to use: `Air`, `Ground`, or `Custom` (Default: `Ground`). |
 | `-p`, `--pose-limit` | Limit the number of poses to convert (Optional). |
 | `-u`, `--uniform` | Distribute selected poses uniformly instead of taking the first `n` poses (Default: `False`). |
-| `-d`, `--depth-conversion` | Convert depth images to `.npy` format (Default: `False`). |
+| `-d`, `--depth-conversion` | Convert 32bit depth images to `.npy` format (Default: `False`). |
 
 ### Example
 To convert a dataset with a pose limit of 300 images, which are uniformly selected, using `Ground` camera intrinsics and enabling depth conversion:
