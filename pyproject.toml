@@ -1,0 +1,30 @@
+[project]
+name = "tartanToNerfstudio"
+version = "0.2.0"
+description = "Convert TartanAir/TartanGround datasets to NerfStudio format"
+authors = [
+    { name="jannick-schroeer" }
+]
+requires-python = ">=3.8"
+dependencies = [
+    "blessed==1.20.0",
+    "editor==1.6.6",
+    "inquirer==3.4.0",
+    "numpy==1.24.4",
+    "opencv-python==4.8.0.76",
+    "prompt_toolkit==3.0.51",
+    "readchar==4.2.1",
+    "runs==1.2.2",
+    "six==1.17.0",
+    "tqdm==4.67.1",
+    "wcwidth==0.2.13",
+    "xmod==1.8.1",
+    "tyro==0.9.19"
+]
+
+[project.scripts]
+tartanToNerfstudio = "tartanToNerfstudio.tartan_to_nerfstudio:entrypoint"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
