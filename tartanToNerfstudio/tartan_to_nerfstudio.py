@@ -1,13 +1,17 @@
-import argparse
 import json
 import os
 from typing import List, Dict
 import cv2
 import inquirer
 import numpy as np
+import tyro
+from tyro.conf import Positional
+from dataclasses import dataclass
+from typing import Literal, Optional
+from typing_extensions import Annotated
+from pathlib import Path
 
-
-camera_intrinsics = {
+available_intrinsics = {
     'Custom': {
         "camera_model": "OPENCV",  # Camera model
         "fl_x": 320.0,  # focal length x
@@ -38,33 +42,32 @@ camera_intrinsics = {
     }
 }
 
+@dataclass
 class TartanToNerfStudio:
-    def __init__(self,
-                 base_path: str=None,
-                 camera_intrinsics: str="Air",
-                 pose_limit: int=None,
-                 distribute_uniformly: bool=False,
-                 depth_conversion: bool=False
-                 ):
-        """
-        Create a new TartanToNerfStudio converter.
-        :param base_path: Path to the base folder of the TartanAir/Ground dataset.
-        :param camera_intrinsics: Camera intrinsics to use. (Air, Ground, Custom)
-        :param pose_limit: Limit the number of poses to convert.
-        :param distribute_uniformly: If True, distribute the poses uniformly.
-        :param depth_conversion: Convert depth images to npy files.
-        """
-        if base_path is None:
-            raise ValueError("Please provide the path to the base folder of the TartanAir/Ground dataset.")
+    """Converter for TartanAir/Ground dataset to NerfStudio format."""
+    
+    base_path: Positional[Path]
+    """Path to the base folder of the TartanAir/Ground dataset."""
 
-        if camera_intrinsics not in ["Air", "Ground", "Custom"]:
+    pose_limit: Annotated[Optional[int], tyro.conf.arg(aliases=["-p"])] = None
+    """Limit the number of poses to convert."""
+    uniform: Annotated[bool, tyro.conf.arg(aliases=["-u"])] = False
+    """If True, distribute the poses uniformly."""
+    depth_conversion: Annotated[bool, tyro.conf.arg(aliases=["-d"])] = False
+    """Convert depth images to npy files."""
+    camera_intrinsics: Annotated[Literal["Air", "Ground", "Custom"], tyro.conf.arg(aliases=["-c"])] = "Air"
+    """Camera intrinsics to use. (Air, Ground, Custom)"""
+    output_path: Annotated[Optional[Path], tyro.conf.arg(aliases=["-o"])] = None
+    """Path to the output transforms.json file. If None, it will be saved in the base path."""
+    
+    def validate_args(self):
+        if self.camera_intrinsics not in ["Air", "Ground", "Custom"]:
             raise ValueError("Camera intrinsics must be either 'Air', 'Ground' or 'Custom'.")
+        else:
+            print(f"Using camera intrinsics: Tartan-{self.camera_intrinsics}")
 
-        self.base_path = base_path
-        self.camera_intrinsics = camera_intrinsics
-        self.pose_limit = pose_limit
-        self.distribute_uniformly = distribute_uniformly
-        self.depth_conversion = depth_conversion
+        if self.output_path is None:
+            self.output_path = self.base_path / "transforms.json"
 
     def check_poses(self):
         """
@@ -81,8 +84,8 @@ class TartanToNerfStudio:
             # Check if pose has image and/or depth images
             name = pose.replace("pose", "").replace(".txt", "")
 
-            has_rgb = os.path.exists(os.path.join(self.base_path, f"image{name}"))
-            has_depth = os.path.exists(os.path.join(self.base_path, f"depth{name}"))
+            has_rgb = (self.base_path / f"image{name}").exists()
+            has_depth = (self.base_path / f"depth{name}").exists()
 
             if not has_rgb:
                 continue
@@ -115,16 +118,16 @@ class TartanToNerfStudio:
         loaded_poses = []
 
         for name in poses:
-            with open(os.path.join(self.base_path, f"pose{name}.txt")) as f:
+            with open(self.base_path / f"pose{name}.txt") as f:
                 lines = f.readlines()
                 # Separate the values and convert them to float
                 camera_poses = [[float(x) for x in line.strip().split()] for line in lines]
-                has_depth = os.path.exists(os.path.join(self.base_path, f"depth{name}"))
+                has_depth = (self.base_path / f"depth{name}").exists()
 
                 if self.pose_limit is not None:
                     single_limit = self.pose_limit // len(poses)
                     print(f"Limiting poses to {single_limit} per pose file (total: {len(camera_poses)})")
-                    if self.distribute_uniformly:
+                    if self.uniform:
                         distribution = len(camera_poses) // single_limit
                         print(f"Distributing poses uniformly with a step of {distribution} (total: {len(camera_poses)})")
                         camera_poses = camera_poses[::distribution]
@@ -225,13 +228,13 @@ class TartanToNerfStudio:
         :param depth_path:
         :return:
         """
-        depth_rgba = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
+        depth_rgba = cv2.imread(str(depth_path), cv2.IMREAD_UNCHANGED)
 
         # Convert depth image to float32 format
         depth_values = depth_rgba.view("<f4").squeeze()
 
         # Save to npy file
-        converted_path = depth_path.replace(".png", "_converted.npy")
+        converted_path = str(depth_path).replace(".png", "_converted.npy")
         np.save(converted_path, depth_values)
 
         return os.path.basename(converted_path)
@@ -242,21 +245,22 @@ class TartanToNerfStudio:
         :param poses: List of poses to write.
         :return:
         """
-        global camera_intrinsics
-        transforms = camera_intrinsics[self.camera_intrinsics].copy()
+        global available_intrinsics
+
+        transforms = available_intrinsics[self.camera_intrinsics].copy()
         transforms["frames"] = []
 
         for pose in poses:
             image_folder_name = f"image{pose['name']}"
             depth_folder_name = f"depth{pose['name']}"
 
-            images_folder = os.path.join(self.base_path, image_folder_name)
+            images_folder = self.base_path / image_folder_name
             images = [i for i in os.listdir(images_folder) if i.endswith((".png", ".jpg", ".jpeg"))]
             images = sorted(images, key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0]))))
 
             if self.pose_limit is not None:
                 single_limit = self.pose_limit // len(poses)
-                if self.distribute_uniformly:
+                if self.uniform:
                     distribution = len(images) // single_limit
                     images = images[::distribution]
                 else:
@@ -266,13 +270,13 @@ class TartanToNerfStudio:
                 raise ValueError(f"Number of images ({len(images)}) does not match the number of poses ({len(pose['nerfstudio_poses'])})")
 
             if pose['has_depth']:
-                depth_folder = os.path.join(self.base_path, depth_folder_name)
+                depth_folder = self.base_path / depth_folder_name
                 depth_images = [i for i in os.listdir(depth_folder) if (i.endswith((".npy", ".png", ".jpg", ".jpeg")) and not i.endswith("_converted.npy"))]
                 depth_images = sorted(depth_images, key=lambda x: int(''.join(filter(str.isdigit, os.path.splitext(x)[0]))))
 
                 if self.pose_limit is not None:
                     single_limit = self.pose_limit // len(poses)
-                    if self.distribute_uniformly:
+                    if self.uniform:
                         distribution = len(depth_images) // single_limit
                         depth_images = depth_images[::distribution]
                     else:
@@ -290,40 +294,37 @@ class TartanToNerfStudio:
                 if pose['has_depth']:
                     depth_file = f"{depth_folder_name}/{depth_images[i]}"
                     if self.depth_conversion:
-                        converted_file = self.convert_depth_image(os.path.join(self.base_path, depth_file))
+                        converted_file = self.convert_depth_image(self.base_path / depth_file)
                         frame["depth_file_path"] = f"{depth_folder_name}/{converted_file}"
                     else:
                         frame["depth_file_path"] = depth_file
 
                 transforms["frames"].append(frame)
 
-        with open(os.path.join(self.base_path, "transforms.json"), "w") as f:
+        with open(self.output_path, "w") as f:
             json.dump(transforms, f, indent=4)
+            print(f'Transforms file written to {self.output_path}')
+    
 
+def entrypoint():
+    """
+    Entrypoint for the script.
+    :return: 
+    """
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Convert TartanAir dataset to NerfStudio dataset.")
-    parser.add_argument('base_path', type=str, help="Path to the base folder.")
-    parser.add_argument("-p", "--pose-limit", type=int, help="Limit the number of poses to convert.", default=None)
-    parser.add_argument("-u", "--uniform", help="When limiting poses, instead of taking the first n poses, take them uniformly.", default=False, action="store_true")
-    parser.add_argument("-d", "--depth-conversion", help="Convert depth images to npy files. (Needed for 32bit depth images)", default=False, action="store_true")
-    parser.add_argument("-c", "--camera-intrinsics", type=str, help="Use TartanAir, TartanGround or Custom intrinsics. [Air, Ground, Custom]", default="Ground")
-    args = parser.parse_args()
-
-    converter = TartanToNerfStudio(
-        args.base_path,
-        args.camera_intrinsics,
-        int(args.pose_limit) if args.pose_limit is not None else None,
-        args.uniform,
-        args.depth_conversion
-    )
+    tyro.extras.set_accent_color('bright_yellow')
+    converter = tyro.cli(TartanToNerfStudio)
+    converter.validate_args()
     poses = converter.check_poses()
-
     questions = [
         inquirer.Checkbox('poses',
                           message='Select which poses you want to have in the dataset.',
-                          choices=[(f"{pose['name'].strip('_')} (rgb{'+d' if pose['has_rgb'] else ''})", pose['name']) for pose in poses],
+                          choices=[(f"{pose['name'].strip('_')} (rgb{'+d' if pose['has_rgb'] else ''})", pose['name'])
+                                   for pose in poses],
                           ),
     ]
-
     converter.create_transforms(inquirer.prompt(questions)['poses'])
+
+
+if __name__ == "__main__":
+    entrypoint()
